@@ -1,0 +1,36 @@
+# FastAPI and web server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Solana integration
+solana==0.30.2
+anchorpy==0.18.0
+solders==0.18.1
+spl-token==0.0.8
+
+# Federated Learning & ML
+numpy==1.26.2
+torch==2.1.1
+cryptography==41.0.7
+pycryptodome==3.19.0
+
+# Privacy & Security
+diffprivlib==0.6.1
+# Note: ZKP implementation can be added later or use existing libraries
+
+# Utilities
+python-dotenv==1.0.0
+httpx==0.25.2
+aiofiles==23.2.1
+python-multipart==0.0.6
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1

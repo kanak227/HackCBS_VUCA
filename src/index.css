@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-cyber-darker text-white font-inter;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-cyber-glass backdrop-blur-md border border-white/10;
+  }
+
+  .cyber-border {
+    @apply border border-cyber-cyan/30 shadow-cyber-glow;
+  }
+
+  .cyber-button {
+    @apply px-6 py-3 bg-gradient-cyber text-white font-orbitron font-semibold rounded-lg 
+           transition-all duration-300 hover:scale-105 hover:shadow-cyber-glow 
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .cyber-card {
+    @apply glass rounded-xl p-6 border border-cyber-cyan/20 
+           hover:border-cyber-cyan/50 transition-all duration-300;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-cyber bg-clip-text text-transparent;
+  }
+
+  .glow-effect {
+    @apply relative before:absolute before:inset-0 before:bg-gradient-cyber 
+           before:blur-xl before:opacity-30 before:-z-10;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-cyber-dark;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-cyber-cyan/30 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-cyber-cyan/50;
+}
+
+/* Solana Wallet Adapter Custom Styles */
+.wallet-adapter-button {
+  background: linear-gradient(135deg, #00f0ff 0%, #b026ff 50%, #ff00ff 100%) !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  font-family: 'Orbitron', sans-serif !important;
+  font-weight: 600 !important;
+  transition: all 0.3s ease !important;
+}
+
+.wallet-adapter-button:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.5) !important;
+}
+
+.wallet-adapter-button-trigger {
+  background: transparent !important;
+}
+
+.wallet-adapter-modal-wrapper {
+  background: rgba(10, 10, 15, 0.95) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.wallet-adapter-modal {
+  background: rgba(5, 5, 8, 0.95) !important;
+  border: 1px solid rgba(0, 240, 255, 0.3) !important;
+  border-radius: 1rem !important;
+}
+
+.wallet-adapter-modal-title {
+  color: #00f0ff !important;
+  font-family: 'Orbitron', sans-serif !important;
+}
+
+.wallet-adapter-button-list {
+  background: transparent !important;
+}
+
+.wallet-adapter-button-list-item {
+  background: rgba(0, 240, 255, 0.1) !important;
+  border: 1px solid rgba(0, 240, 255, 0.3) !important;
+  border-radius: 0.5rem !important;
+  color: white !important;
+  transition: all 0.3s ease !important;
+}
+
+.wallet-adapter-button-list-item:hover {
+  background: rgba(0, 240, 255, 0.2) !important;
+  border-color: rgba(0, 240, 255, 0.5) !important;
+  transform: scale(1.02) !important;
+}
