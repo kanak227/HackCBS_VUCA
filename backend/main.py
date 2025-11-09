@@ -7,22 +7,22 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from contextlib import asynccontextmanager
 
-from app.api import training, rewards, solana, contributors, analytics
+from app.api import challenges, submissions, admin, leaderboard, auth
 from app.core.config import settings
-from app.db.database import engine, Base
+from app.db.mongodb import MongoDB
 
-# Create database tables
+# MongoDB connection lifecycle
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    Base.metadata.create_all(bind=engine)
+    await MongoDB.connect()
     yield
     # Shutdown
-    pass
+    await MongoDB.disconnect()
 
 app = FastAPI(
-    title="Sentinel.ai API",
-    description="Decentralized Federated Learning Backend",
+    title="FlexAI API",
+    description="Decentralized AI Fine-tuning Challenge Marketplace",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -37,17 +37,18 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(training.router, prefix="/api/training", tags=["Training"])
-app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
-app.include_router(solana.router, prefix="/api/solana", tags=["Solana"])
-app.include_router(contributors.router, prefix="/api/contributors", tags=["Contributors"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(challenges.router, prefix="/api/challenges", tags=["Challenges"])
+app.include_router(submissions.router, prefix="/api/submissions", tags=["Submissions"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["Leaderboard"])
 
 @app.get("/")
 async def root():
     return {
-        "message": "Sentinel.ai Backend API",
+        "message": "FlexAI Backend API",
         "version": "1.0.0",
+        "description": "Decentralized AI Fine-tuning Challenge Marketplace",
         "docs": "/docs"
     }
 

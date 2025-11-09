@@ -9,10 +9,10 @@ const Navbar = () => {
 
   const navItems = [
     { path: '/', label: 'Home' },
-    { path: '/contributor', label: 'Contributor' },
-    { path: '/trainer', label: 'Trainer' },
-    { path: '/explorer', label: 'Explorer' },
-    { path: '/rewards', label: 'Rewards' },
+    { path: '/challenges', label: 'Challenges' },
+    { path: '/leaderboard', label: 'Leaderboard' },
+    { path: '/dashboard', label: 'My Dashboard' },
+    { path: '/moderator', label: 'Moderator' },
   ]
 
   return (
@@ -30,7 +30,7 @@ const Navbar = () => {
               className="w-10 h-10 bg-gradient-cyber rounded-lg"
             />
             <span className="text-2xl font-orbitron font-bold text-gradient">
-              Sentinel.ai
+              FlexAI
             </span>
           </Link>
 

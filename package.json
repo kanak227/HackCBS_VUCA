@@ -10,22 +10,22 @@
     "clean": "rm -rf node_modules dist"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.20.0",
+    "@react-three/drei": "^9.92.7",
+    "@react-three/fiber": "^8.15.11",
     "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-phantom": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
     "@solana/wallet-adapter-react-ui": "^0.9.35",
-    "@solana/wallet-adapter-phantom": "^0.9.23",
     "@solana/wallet-adapter-solflare": "^0.6.23",
     "@solana/web3.js": "^1.87.6",
     "framer-motion": "^10.16.16",
-    "@react-three/fiber": "^8.15.11",
-    "@react-three/drei": "^9.92.7",
-    "three": "^0.158.0",
-    "recharts": "^2.10.3",
+    "lucide-react": "^0.294.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
-    "lucide-react": "^0.294.0"
+    "react-router-dom": "^6.20.0",
+    "recharts": "^2.10.3",
+    "three": "^0.159.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
@@ -39,4 +39,3 @@
     "vite": "^5.0.8"
   }
 }
-

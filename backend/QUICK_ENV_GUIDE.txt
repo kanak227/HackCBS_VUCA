@@ -1,0 +1,40 @@
+===========================================
+QUICK GUIDE: How to Create .env File
+===========================================
+
+✅ DONE: .env file has been created from env.example
+
+📝 TO EDIT:
+   cd backend
+   nano .env
+   # or use any text editor
+
+🔧 ESSENTIAL SETTINGS:
+
+1. MongoDB (Required):
+   MONGODB_URL=mongodb://localhost:27017
+   MONGODB_DB_NAME=flexai
+
+2. Secret Key (Change for production):
+   SECRET_KEY=dev-secret-key-change-in-production
+
+3. Optional - Gemini API:
+   GEMINI_API_KEY=your_key_here
+   # Get from: https://aistudio.google.com/apikey
+
+4. Optional - Solana Program:
+   PROGRAM_ID=your_program_id
+   SOLANA_PRIVATE_KEY=your_key
+
+✅ CURRENT STATUS:
+   - .env file: ✓ Created
+   - MongoDB URL: mongodb://localhost:27017
+   - Database Name: flexai
+   - Ready to use!
+
+📋 NEXT STEPS:
+   1. Install MongoDB (if not installed)
+   2. Edit .env if needed
+   3. Start backend: python main.py
+
+See CREATE_ENV.md for detailed instructions!
