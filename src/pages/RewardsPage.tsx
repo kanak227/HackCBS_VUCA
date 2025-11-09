@@ -5,7 +5,7 @@ import Card from '../components/Card'
 import Chart from '../components/Chart'
 import Button from '../components/Button'
 import { Trophy, Coins, TrendingUp, Award, Loader2, ExternalLink } from 'lucide-react'
-import { rewardsAPI, solanaAPI, analyticsAPI } from '../utils/api'
+import { rewardsAPI, leaderboardApi } from '../utils/api'
 
 interface Transaction {
   transaction_hash: string
@@ -46,46 +46,62 @@ const RewardsPage = () => {
         if (publicKey) {
           const address = publicKey.toString()
           
-          // Get real transactions from blockchain
-          const txs = await solanaAPI.getAddressTransactions(address, 50)
-          setTransactions(
-            (txs.transactions || []).map((tx: any) => ({
-              transaction_hash: tx.transaction_hash,
-              status: tx.status,
-              amount: tx.amount,
-              block_time: tx.block_time,
-              fee: tx.fee,
-              explorer_url: tx.explorer_url || `https://solscan.io/tx/${tx.transaction_hash}`,
-            }))
-          )
+          // Get transactions from API
+          try {
+            const txs = await rewardsAPI.getTransactions(address)
+            setTransactions(
+              (txs.transactions || []).map((tx: any) => ({
+                transaction_hash: tx.transaction_hash || tx.signature,
+                status: tx.status || 'confirmed',
+                amount: tx.amount || 0,
+                block_time: tx.block_time,
+                fee: tx.fee,
+                explorer_url: tx.explorer_url || `https://solscan.io/tx/${tx.transaction_hash || tx.signature}?cluster=testnet`,
+              }))
+            )
+          } catch (error) {
+            console.warn('Could not fetch transactions:', error)
+            setTransactions([])
+          }
 
-          // Get contributor rewards
-          const rewards = await rewardsAPI.getContributorRewards(address)
-          setTotalRewards(rewards.total_rewards || 0)
-          setPendingRewards(
-            rewards.rewards?.filter((r: any) => r.status === 'pending').reduce((sum: number, r: any) => sum + (r.amount || 0), 0) || 0
-          )
+          // Get contributor stats from leaderboard API
+          try {
+            const contributorStats = await leaderboardApi.getContributor(address)
+            setTotalRewards(contributorStats.total_rewards || 0)
+            setPendingRewards(0) // Pending rewards not available in current API
+          } catch (error) {
+            console.warn('Could not fetch contributor stats:', error)
+            setTotalRewards(0)
+            setPendingRewards(0)
+          }
         }
 
         // Fetch leaderboard
-        const leaderboardData = await rewardsAPI.getLeaderboard()
-        setLeaderboard(leaderboardData || [])
+        try {
+          const leaderboardData = await leaderboardApi.get(0, 100)
+          setLeaderboard(leaderboardData.entries || [])
 
-        // Find user rank
-        if (publicKey) {
-          const address = publicKey.toString()
-          const rank = leaderboardData?.findIndex((entry: any) => entry.contributor_address === address)
-          setUserRank(rank !== undefined && rank >= 0 ? rank + 1 : null)
+          // Find user rank
+          if (publicKey) {
+            const address = publicKey.toString()
+            const rank = leaderboardData.entries?.findIndex((entry: any) => entry.contributor_address === address)
+            setUserRank(rank !== undefined && rank >= 0 ? rank + 1 : null)
+          }
+        } catch (error) {
+          console.warn('Could not fetch leaderboard:', error)
+          setLeaderboard([])
         }
 
-        // Fetch reward history
-        const timeline = await analyticsAPI.getRewardsTimeline(30)
-        const historyData = Object.entries(timeline.timeline || {})
-          .slice(-5)
-          .map(([date, amount]: [string, any], idx) => ({
-            name: `Week ${idx + 1}`,
-            rewards: amount,
-          }))
+        // Generate mock reward history (since API doesn't have timeline)
+        // In production, this would come from analytics API
+        const currentTotal = totalRewards || 0
+        const historyData = [
+          { name: 'Week 1', rewards: 0 },
+          { name: 'Week 2', rewards: 0 },
+          { name: 'Week 3', rewards: 0 },
+          { name: 'Week 4', rewards: currentTotal },
+          { name: 'Week 5', rewards: 0 },
+        ]
         setRewardHistoryData(historyData)
       } catch (error) {
         console.error('Error fetching rewards data:', error)
@@ -349,7 +365,7 @@ const RewardsPage = () => {
                       </td>
                       <td className="py-3 px-4 font-mono text-sm">
                         <a
-                          href={`https://solscan.io/account/${entry.contributor_address}`}
+                          href={`https://solscan.io/account/${entry.contributor_address}?cluster=testnet`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-cyber-cyan hover:underline flex items-center gap-1"

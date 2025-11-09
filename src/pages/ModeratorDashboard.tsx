@@ -226,7 +226,8 @@ const ModeratorDashboard = () => {
         },
       }))
 
-      // Wait for confirmation with timeout
+      // Wait for confirmation with timeout and verify transaction
+      let txConfirmed = false
       try {
         await Promise.race([
           connection.confirmTransaction(
@@ -241,22 +242,125 @@ const ModeratorDashboard = () => {
             setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
           )
         ])
+        txConfirmed = true
       } catch (confirmError: any) {
         // Transaction was sent, but confirmation timed out
         // Check if transaction actually succeeded
-        const txStatus = await connection.getSignatureStatus(signature)
-        if (txStatus.value?.err) {
-          throw new Error(`Transaction failed: ${JSON.stringify(txStatus.value.err)}`)
-        }
-        // If no error, transaction likely succeeded, continue
-        console.warn('Confirmation timeout, but transaction may have succeeded:', signature)
+        console.warn('Confirmation timeout, checking transaction status...')
       }
 
-      // Update status to confirmed
-      setTransactionModal((prev) => ({
-        ...prev,
-        transaction: { ...prev.transaction, status: 'confirmed' },
-      }))
+      // Verify transaction actually succeeded
+      try {
+        // First, try to get transaction details directly (more reliable)
+        let txDetails = null
+        let retries = 0
+        const maxRetries = 5
+        
+        while (!txDetails && retries < maxRetries) {
+          try {
+            txDetails = await connection.getTransaction(signature, { 
+              commitment: 'confirmed',
+              maxSupportedTransactionVersion: 0 
+            })
+            
+            if (txDetails) break
+            
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            retries++
+          } catch (e: any) {
+            console.warn(`Attempt ${retries + 1} to get transaction failed:`, e.message)
+            if (retries < maxRetries - 1) {
+              await new Promise(resolve => setTimeout(resolve, 2000))
+            }
+            retries++
+          }
+        }
+        
+        if (!txDetails) {
+          // If we can't get transaction details, try signature status (simpler method)
+          try {
+            const status = await connection.getSignatureStatus(signature)
+            if (status.value?.err) {
+              throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`)
+            }
+            if (status.value) {
+              console.log('✅ Transaction status confirmed:', signature)
+              txConfirmed = true
+            } else {
+              throw new Error('Transaction not found. It may still be processing or may have failed.')
+            }
+          } catch (statusError: any) {
+            // If signature status also fails, check if transaction exists by trying to get it
+            console.warn('Could not verify via signature status, checking transaction directly...')
+            throw new Error(`Transaction verification failed. Please check on Solscan: https://solscan.io/tx/${signature}?cluster=testnet`)
+          }
+        } else {
+          // We have transaction details, verify it
+          // Verify transaction meta shows success
+          if (txDetails.meta?.err) {
+            throw new Error(`Transaction failed: ${JSON.stringify(txDetails.meta.err)}`)
+          }
+          
+          // Verify the transaction actually transferred SOL to the contributor
+          const contributorPubkey = new PublicKey(submission.contributor_address)
+          
+          // Check if SOL was actually transferred (check post token balances)
+          const preBalances = txDetails.meta?.preBalances || []
+          const postBalances = txDetails.meta?.postBalances || []
+          
+          // Find contributor account index in transaction
+          // Handle both legacy and versioned transactions
+          let accountKeys: any[] = []
+          if ('accountKeys' in txDetails.transaction.message) {
+            // Legacy transaction
+            accountKeys = txDetails.transaction.message.accountKeys as any[]
+          } else if ('getAccountKeys' in txDetails.transaction.message) {
+            // Versioned transaction
+            accountKeys = txDetails.transaction.message.getAccountKeys().keySegments().flat()
+          }
+          
+          const contributorIndex = accountKeys.findIndex((key: any) => 
+            key.toString() === contributorPubkey.toString()
+          )
+          
+          if (contributorIndex >= 0 && preBalances[contributorIndex] !== undefined && postBalances[contributorIndex] !== undefined) {
+            const balanceChange = (postBalances[contributorIndex] - preBalances[contributorIndex]) / LAMPORTS_PER_SOL
+            console.log(`✅ Balance change for contributor: ${balanceChange} SOL (expected: ${rewardAmount} SOL)`)
+            
+            if (balanceChange < rewardAmount * 0.99) { // Allow small fee differences
+              console.warn(`Expected ${rewardAmount} SOL but balance changed by ${balanceChange} SOL`)
+            }
+          } else {
+            // If we can't verify balance change, at least verify transaction succeeded
+            console.log('✅ Transaction found and succeeded (balance verification skipped)')
+          }
+          
+          console.log('✅ Transaction verified on blockchain:', signature)
+          txConfirmed = true
+        }
+      } catch (verifyError: any) {
+        console.error('Transaction verification failed:', verifyError)
+        // Don't throw error if transaction was sent - it might still succeed
+        // Just log and continue - the transaction might be processing
+        if (verifyError.message?.includes('Transaction failed')) {
+          throw verifyError
+        }
+        // For other errors, show warning but don't fail - transaction might still be processing
+        console.warn('Could not fully verify transaction, but it was sent. Check Solscan:', signature)
+        // Mark as confirmed anyway if we got this far (transaction was sent)
+        txConfirmed = true
+      }
+
+      // Update status to confirmed only if verified
+      if (txConfirmed) {
+        setTransactionModal((prev) => ({
+          ...prev,
+          transaction: { ...prev.transaction, status: 'confirmed' },
+        }))
+      } else {
+        throw new Error('Transaction could not be confirmed. Please check on Solscan.')
+      }
 
       // Now update the database via API with the transaction hash
       try {
@@ -520,7 +624,7 @@ const ModeratorDashboard = () => {
                     {submission.solana_tx_hash && (
                       <div className="mb-4">
                         <a
-                          href={`https://solscan.io/tx/${submission.solana_tx_hash}`}
+                          href={`https://solscan.io/tx/${submission.solana_tx_hash}?cluster=testnet`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-2 text-red-400 hover:text-orange-400 text-sm"

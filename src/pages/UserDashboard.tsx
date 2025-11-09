@@ -301,7 +301,7 @@ const UserDashboard = () => {
                       {submission.reward_tx_hash && (
                         <div className="mb-4">
                           <a
-                            href={`https://solscan.io/tx/${submission.reward_tx_hash}`}
+                            href={`https://solscan.io/tx/${submission.reward_tx_hash}?cluster=testnet`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 text-cyber-cyan hover:text-cyber-purple text-sm"
@@ -315,7 +315,7 @@ const UserDashboard = () => {
                       {submission.solana_tx_hash && (
                         <div>
                           <a
-                            href={`https://solscan.io/tx/${submission.solana_tx_hash}`}
+                            href={`https://solscan.io/tx/${submission.solana_tx_hash}?cluster=testnet`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 text-cyber-cyan hover:text-cyber-purple text-sm"

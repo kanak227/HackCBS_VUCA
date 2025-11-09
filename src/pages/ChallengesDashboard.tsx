@@ -13,15 +13,29 @@ const ChallengesDashboard = () => {
 
   useEffect(() => {
     loadChallenges()
+    // Refresh challenges every 5 seconds to catch newly created ones
+    const interval = setInterval(loadChallenges, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   const loadChallenges = async () => {
     try {
       setLoading(true)
+      // Fetch all active challenges (not expired)
       const data = await challengesApi.list('active')
+      console.log('Loaded challenges:', data.challenges.length, data.challenges)
       setChallenges(data.challenges)
     } catch (error) {
       console.error('Error loading challenges:', error)
+      // On error, try loading without status filter as fallback
+      try {
+        const allData = await challengesApi.list()
+        const activeChallenges = allData.challenges.filter(c => c.status === 'active')
+        console.log('Fallback: Loaded', activeChallenges.length, 'active challenges')
+        setChallenges(activeChallenges)
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError)
+      }
     } finally {
       setLoading(false)
     }

@@ -51,8 +51,14 @@ export const challengesApi = {
   list: async (status?: string): Promise<{ challenges: Challenge[]; total: number }> => {
     const params = new URLSearchParams()
     if (status) params.append('status_filter', status)
+    // Add cache-busting to ensure fresh data
+    params.append('_t', Date.now().toString())
     const response = await fetch(`${API_BASE_URL}/api/challenges?${params}`)
-    if (!response.ok) throw new Error('Failed to fetch challenges')
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Failed to fetch challenges:', response.status, errorText)
+      throw new Error(`Failed to fetch challenges: ${response.status}`)
+    }
     return response.json()
   },
 

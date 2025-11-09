@@ -166,10 +166,11 @@ const TransactionModal = ({ isOpen, onClose, transaction }: TransactionModalProp
                         {transaction.signature}
                       </div>
                       <a
-                        href={`https://solscan.io/tx/${transaction.signature}`}
+                        href={`https://solscan.io/tx/${transaction.signature}?cluster=testnet`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-2 text-blue-400 hover:text-blue-300 transition-colors"
+                        title="View on Solscan (Testnet)"
                       >
                         <ExternalLink className="w-4 h-4" />
                       </a>
@@ -221,12 +222,12 @@ const TransactionModal = ({ isOpen, onClose, transaction }: TransactionModalProp
               {transaction.status === 'confirmed' && (
                 <div className="flex gap-3">
                   <a
-                    href={`https://solscan.io/tx/${transaction.signature}`}
+                    href={`https://solscan.io/tx/${transaction.signature}?cluster=testnet`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex-1 px-4 py-2 bg-gradient-to-r from-red-500 to-orange-500 rounded-lg text-white font-orbitron text-center hover:from-red-600 hover:to-orange-600 transition-colors"
                   >
-                    View on Solscan
+                    View on Solscan (Testnet)
                   </a>
                   <button
                     onClick={onClose}

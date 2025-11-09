@@ -150,9 +150,11 @@ async def list_challenges(
         if status_filter:
             query = query.filter(Challenge.status == status_filter)
         
-        # Filter out expired challenges
+        # Filter out expired challenges (only if deadline is in the past)
         now = datetime.utcnow()
         query = query.filter(Challenge.deadline > now)
+        
+        logger.info(f"Listing challenges: status_filter={status_filter}, found {query.count()} challenges before limit")
         
         total = query.count()
         challenges = query.order_by(desc(Challenge.created_at)).offset(skip).limit(limit).all()
