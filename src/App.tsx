@@ -50,13 +50,13 @@ function App() {
   return (
     <WalletContextProvider>
       <Router>
-        <Routes>
+          <Routes>
           {/* Moderator Routes - completely separate, no user content */}
           <Route path="/moderator/*" element={<ModeratorLayout />} />
           
           {/* User Routes - regular interface */}
           <Route path="/*" element={<UserLayout />} />
-        </Routes>
+          </Routes>
       </Router>
     </WalletContextProvider>
   )

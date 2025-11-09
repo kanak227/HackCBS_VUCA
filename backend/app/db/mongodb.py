@@ -21,32 +21,42 @@ class MongoDB:
         try:
             # Handle MongoDB Atlas connection with proper SSL
             connection_kwargs = {
-                "serverSelectionTimeoutMS": 5000,
-                "connectTimeoutMS": 5000,
+                "serverSelectionTimeoutMS": 10000,  # Increased timeout
+                "connectTimeoutMS": 10000,
             }
             
             # For MongoDB Atlas (mongodb+srv), add SSL requirements
             if "mongodb+srv" in settings.MONGODB_URL or "mongodb.net" in settings.MONGODB_URL:
                 connection_kwargs["tls"] = True
                 connection_kwargs["tlsAllowInvalidCertificates"] = False
+                # Add retry writes for Atlas
+                if "retryWrites" not in settings.MONGODB_URL:
+                    # Ensure proper connection string format
+                    separator = "&" if "?" in settings.MONGODB_URL else "?"
+                    if not settings.MONGODB_URL.endswith("/"):
+                        settings.MONGODB_URL += "/"
+                    if "retryWrites" not in settings.MONGODB_URL:
+                        settings.MONGODB_URL += f"{separator}retryWrites=true&w=majority"
             
             cls.client = AsyncIOMotorClient(
                 settings.MONGODB_URL,
                 **connection_kwargs
             )
-            # Test connection
+            # Test connection with longer timeout
             await cls.client.admin.command('ping')
             cls.database = cls.client[settings.MONGODB_DB_NAME]
             logger.info(f"✅ Connected to MongoDB: {settings.MONGODB_DB_NAME}")
             
             # Create indexes
-            await cls.create_indexes()
+            if cls.database is not None:
+                await cls.create_indexes()
             
         except Exception as e:
             logger.warning(f"⚠️  Failed to connect to MongoDB: {e}")
             logger.warning("⚠️  Server will start but MongoDB features will not work.")
             logger.warning("⚠️  Please check MONGODB_URL in .env file")
             logger.warning("⚠️  For local MongoDB: mongodb://localhost:27017")
+            logger.warning("⚠️  For Atlas, ensure connection string includes: ?retryWrites=true&w=majority")
             # Don't raise - allow server to start without MongoDB
             # The API routes will handle this gracefully
             cls.client = None
@@ -62,7 +72,7 @@ class MongoDB:
     @classmethod
     async def create_indexes(cls):
         """Create database indexes for better performance"""
-        if not cls.database:
+        if cls.database is None:
             return
         
         try:

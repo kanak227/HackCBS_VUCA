@@ -17,13 +17,19 @@ const CreateChallenge = () => {
     company_name: '',
     baseline_model_hash: '',
     baseline_accuracy: 0.85,
-    reward_amount: 1.0,
+    reward_amount: 0.05,
     reward_token_mint: '',
     deadline: '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    
+    // Prevent double submission
+    if (loading) {
+      return
+    }
     
     if (!publicKey) {
       alert('Please connect your wallet first')
@@ -35,19 +41,40 @@ const CreateChallenge = () => {
       return
     }
 
+    // Validate reward amount
+    const rewardAmount = typeof formData.reward_amount === 'number' ? formData.reward_amount : parseFloat(String(formData.reward_amount)) || 0
+    
+    if (rewardAmount > 0.05) {
+      alert('Reward amount cannot exceed 0.05 SOL. Please enter a value between 0.01 and 0.05 SOL.')
+      return
+    }
+
+    if (rewardAmount < 0.01) {
+      alert('Reward amount must be at least 0.01 SOL.')
+      return
+    }
+
     try {
       setLoading(true)
       
       const challenge = await challengesApi.create({
-        ...formData,
+        title: formData.title,
+        description: formData.description,
+        company_name: formData.company_name,
         creator_address: publicKey.toString(),
+        baseline_model_hash: formData.baseline_model_hash,
+        baseline_accuracy: typeof formData.baseline_accuracy === 'number' ? formData.baseline_accuracy : parseFloat(String(formData.baseline_accuracy)) || 0.85,
+        reward_amount: rewardAmount,
+        reward_token_mint: formData.reward_token_mint || undefined,
         deadline: new Date(formData.deadline).toISOString(),
       })
 
       alert(`Challenge created successfully!\nChallenge ID: ${challenge.challenge_id}`)
       navigate('/moderator')
     } catch (error: any) {
-      alert(`Error creating challenge: ${error.message || 'Unknown error'}`)
+      console.error('Error creating challenge:', error)
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error occurred'
+      alert(`Error creating challenge: ${errorMessage}`)
     } finally {
       setLoading(false)
     }
@@ -55,11 +82,44 @@ const CreateChallenge = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    let processedValue: string | number = value
+    
+    if (name === 'baseline_accuracy' || name === 'reward_amount') {
+      // Handle empty string
+      if (value === '' || value === '.') {
+        processedValue = name === 'reward_amount' ? 0.05 : 0.85
+      } else {
+        const numValue = parseFloat(value)
+        if (isNaN(numValue)) {
+          // Keep current value if invalid
+          return
+        }
+        
+        // Clamp reward amount to max 0.05 and min 0.01
+        if (name === 'reward_amount') {
+          if (numValue > 0.05) {
+            processedValue = 0.05
+          } else if (numValue < 0.01 && numValue > 0) {
+            processedValue = 0.01
+          } else {
+            processedValue = numValue
+          }
+        } else {
+          // Clamp baseline accuracy to 0-1
+          if (numValue > 1) {
+            processedValue = 1
+          } else if (numValue < 0) {
+            processedValue = 0
+          } else {
+            processedValue = numValue
+          }
+        }
+      }
+    }
+    
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'baseline_accuracy' || name === 'reward_amount' 
-        ? parseFloat(value) || 0 
-        : value
+      [name]: processedValue
     }))
   }
 
@@ -83,7 +143,7 @@ const CreateChallenge = () => {
         </div>
 
         <Card>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             {/* Title */}
             <div>
               <label className="block text-sm font-space font-medium text-gray-300 mb-2">
@@ -170,7 +230,7 @@ const CreateChallenge = () => {
             {/* Reward Amount */}
             <div>
               <label className="block text-sm font-space font-medium text-gray-300 mb-2">
-                Reward Amount (SOL) *
+                Reward Amount (SOL) * (Max: 0.05 SOL)
               </label>
               <input
                 type="number"
@@ -178,11 +238,15 @@ const CreateChallenge = () => {
                 value={formData.reward_amount}
                 onChange={handleChange}
                 required
-                min="0.1"
-                step="0.1"
+                min="0.01"
+                max="0.05"
+                step="0.01"
                 className="w-full px-4 py-3 bg-cyber-dark border border-gray-700 rounded-lg text-white focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
-                placeholder="1.0"
+                placeholder="0.05"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter amount between 0.01 and 0.05 SOL (maximum allowed)
+              </p>
             </div>
 
             {/* Reward Token Mint (Optional) */}
@@ -228,8 +292,8 @@ const CreateChallenge = () => {
               <Button
                 type="submit"
                 variant="primary"
-                disabled={loading}
-                className="flex-1 !bg-gradient-to-r !from-red-500 !to-orange-500 hover:!from-red-600 hover:!to-orange-600"
+                disabled={loading || !formData.title.trim() || !formData.description.trim() || !formData.company_name.trim() || !formData.baseline_model_hash.trim() || !formData.deadline}
+                className="flex-1 !bg-gradient-to-r !from-red-500 !to-orange-500 hover:!from-red-600 hover:!to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <>

@@ -104,6 +104,31 @@ const ModeratorDashboard = () => {
     const moderatorAddress = publicKey.toString()
     const rewardAmount = submission.challenge?.reward_amount || 0
 
+    // Check balance before proceeding
+    try {
+      const balance = await connection.getBalance(publicKey)
+      const rewardLamports = Math.floor(rewardAmount * LAMPORTS_PER_SOL)
+      const estimatedFee = 5000 // Estimated transaction fee in lamports
+      const requiredBalance = rewardLamports + estimatedFee
+
+      if (balance < requiredBalance) {
+        const balanceSOL = (balance / LAMPORTS_PER_SOL).toFixed(4)
+        const requiredSOL = (requiredBalance / LAMPORTS_PER_SOL).toFixed(4)
+        alert(
+          `❌ Insufficient SOL Balance!\n\n` +
+          `Your balance: ${balanceSOL} SOL\n` +
+          `Required: ${requiredSOL} SOL\n` +
+          `(Reward: ${rewardAmount} SOL + Fee: ~0.000005 SOL)\n\n` +
+          `Please add SOL to your wallet and try again.\n` +
+          `For Testnet: Use https://faucet.solana.com`
+        )
+        return
+      }
+    } catch (balanceError: any) {
+      console.warn('Could not check balance:', balanceError)
+      // Continue anyway - let the transaction fail if balance is insufficient
+    }
+
     // Open transaction modal
     setTransactionModal({
       isOpen: true,
@@ -128,8 +153,22 @@ const ModeratorDashboard = () => {
       const contributorPubkey = new PublicKey(submission.contributor_address)
       const rewardLamports = Math.floor(rewardAmount * LAMPORTS_PER_SOL)
 
-      // Get recent blockhash
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+      // Validate contributor address
+      try {
+        new PublicKey(submission.contributor_address)
+      } catch (e) {
+        throw new Error(`Invalid contributor address: ${submission.contributor_address}`)
+      }
+
+      // Get recent blockhash with retry
+      let blockhash, lastValidBlockHeight
+      try {
+        const blockhashResult = await connection.getLatestBlockhash('confirmed')
+        blockhash = blockhashResult.blockhash
+        lastValidBlockHeight = blockhashResult.lastValidBlockHeight
+      } catch (e: any) {
+        throw new Error(`Failed to get blockhash: ${e.message}. Check your network connection.`)
+      }
 
       // Create transfer instruction
       const transferInstruction = SystemProgram.transfer({
@@ -146,7 +185,15 @@ const ModeratorDashboard = () => {
       }).add(transferInstruction)
 
       // Sign transaction with moderator's wallet
-      const signedTransaction = await signTransaction(transaction)
+      let signedTransaction
+      try {
+        signedTransaction = await signTransaction(transaction)
+      } catch (e: any) {
+        if (e.message?.includes('User rejected') || e.message?.includes('User cancelled')) {
+          throw new Error('Transaction was cancelled. Please try again and approve the transaction in your wallet.')
+        }
+        throw new Error(`Failed to sign transaction: ${e.message}`)
+      }
 
       // Update status to sending
       setTransactionModal((prev) => ({
@@ -155,10 +202,19 @@ const ModeratorDashboard = () => {
       }))
 
       // Send transaction to blockchain
-      const signature = await sendTransaction(signedTransaction, connection, {
-        skipPreflight: false,
-        maxRetries: 3,
-      })
+      let signature
+      try {
+        signature = await sendTransaction(signedTransaction, connection, {
+          skipPreflight: false,
+          maxRetries: 3,
+          preflightCommitment: 'confirmed',
+        })
+      } catch (e: any) {
+        if (e.message?.includes('insufficient funds') || e.message?.includes('0x1')) {
+          throw new Error('Insufficient SOL balance. Please ensure your moderator wallet has enough SOL to cover the reward and transaction fees (~0.000005 SOL).')
+        }
+        throw new Error(`Failed to send transaction: ${e.message}`)
+      }
 
       // Update modal with transaction signature
       setTransactionModal((prev) => ({
@@ -170,15 +226,31 @@ const ModeratorDashboard = () => {
         },
       }))
 
-      // Wait for confirmation
-      await connection.confirmTransaction(
-        {
-          signature: signature,
-          blockhash: blockhash,
-          lastValidBlockHeight: lastValidBlockHeight,
-        },
-        'confirmed'
-      )
+      // Wait for confirmation with timeout
+      try {
+        await Promise.race([
+          connection.confirmTransaction(
+            {
+              signature: signature,
+              blockhash: blockhash,
+              lastValidBlockHeight: lastValidBlockHeight,
+            },
+            'confirmed'
+          ),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+          )
+        ])
+      } catch (confirmError: any) {
+        // Transaction was sent, but confirmation timed out
+        // Check if transaction actually succeeded
+        const txStatus = await connection.getSignatureStatus(signature)
+        if (txStatus.value?.err) {
+          throw new Error(`Transaction failed: ${JSON.stringify(txStatus.value.err)}`)
+        }
+        // If no error, transaction likely succeeded, continue
+        console.warn('Confirmation timeout, but transaction may have succeeded:', signature)
+      }
 
       // Update status to confirmed
       setTransactionModal((prev) => ({
@@ -192,6 +264,7 @@ const ModeratorDashboard = () => {
       } catch (dbError: any) {
         console.error('Database update failed:', dbError)
         // Transaction already succeeded on blockchain, so we continue
+        alert(`⚠️ Transaction succeeded on blockchain, but database update failed. Transaction hash: ${signature}`)
       }
 
       // Reload submissions after a delay
@@ -200,17 +273,26 @@ const ModeratorDashboard = () => {
       }, 1000)
     } catch (error: any) {
       console.error('Transaction error:', error)
-      const errorMsg = error.message || 'Unknown error'
+      const errorMsg = error.message || String(error) || 'Unknown error occurred'
+      
+      // Better error messages
+      let userFriendlyError = errorMsg
+      if (errorMsg.includes('User rejected') || errorMsg.includes('User cancelled') || errorMsg.includes('cancelled')) {
+        userFriendlyError = 'Transaction was cancelled. Please try again and approve the transaction in your wallet.'
+      } else if (errorMsg.includes('insufficient funds') || errorMsg.includes('0x1')) {
+        userFriendlyError = 'Insufficient SOL balance. Please ensure your moderator wallet has enough SOL to cover the reward and transaction fees (~0.000005 SOL). For Testnet, get free SOL from https://faucet.solana.com'
+      } else if (errorMsg.includes('network') || errorMsg.includes('connection')) {
+        userFriendlyError = 'Network error. Please check your internet connection and try again.'
+      } else if (errorMsg.includes('Invalid')) {
+        userFriendlyError = `Invalid transaction: ${errorMsg}`
+      }
+      
       setTransactionModal((prev) => ({
         ...prev,
         transaction: {
           ...prev.transaction,
           status: 'failed',
-          error: errorMsg.includes('User rejected')
-            ? 'Transaction was cancelled. Please try again and approve the transaction in your wallet.'
-            : errorMsg.includes('insufficient funds')
-            ? 'Insufficient SOL balance. Please ensure your moderator wallet has enough SOL to cover the reward and transaction fees.'
-            : errorMsg,
+          error: userFriendlyError,
         },
       }))
     } finally {

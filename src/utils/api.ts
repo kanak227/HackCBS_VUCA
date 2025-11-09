@@ -78,7 +78,13 @@ export const challengesApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(challenge),
     })
-    if (!response.ok) throw new Error('Failed to create challenge')
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      const errorMessage = errorData.detail || errorData.message || `Failed to create challenge: ${response.status} ${response.statusText}`
+      const error = new Error(errorMessage)
+      ;(error as any).response = { data: errorData, status: response.status }
+      throw error
+    }
     return response.json()
   },
 

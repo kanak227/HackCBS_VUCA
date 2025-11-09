@@ -7,11 +7,14 @@ from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime, timedelta
 import uuid
+import logging
 
 from app.db.database import get_db
 from app.db.models import Challenge, Submission
 from app.services.flexai_solana_service import flexai_solana_service
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -23,7 +26,7 @@ class ChallengeCreate(BaseModel):
     creator_address: str
     baseline_model_hash: str
     baseline_accuracy: float = Field(..., ge=0.0, le=1.0)
-    reward_amount: float = Field(..., gt=0)
+    reward_amount: float = Field(..., gt=0, le=0.05)
     reward_token_mint: Optional[str] = None
     deadline: datetime
 
@@ -59,21 +62,27 @@ async def create_challenge(challenge_data: ChallengeCreate, db: Session = Depend
         # Generate unique challenge ID
         challenge_id = str(uuid.uuid4())
         
-        # Create challenge on blockchain
+        # Create challenge on blockchain (optional - challenge creation doesn't require blockchain)
+        tx_hash = None
         try:
-            tx_hash = await flexai_solana_service.create_challenge(
-                challenge_id=challenge_id,
-                creator_address=challenge_data.creator_address,
-                reward_amount=challenge_data.reward_amount,
-                deadline=challenge_data.deadline,
-                baseline_accuracy=challenge_data.baseline_accuracy,
-                token_mint=challenge_data.reward_token_mint
-            )
+            # Only attempt blockchain transaction if PROGRAM_ID is configured
+            # Otherwise, skip blockchain and just create DB record
+            if flexai_solana_service.program_id and flexai_solana_service.keypair:
+                tx_hash = await flexai_solana_service.create_challenge(
+                    challenge_id=challenge_id,
+                    creator_address=challenge_data.creator_address,
+                    reward_amount=challenge_data.reward_amount,
+                    deadline=challenge_data.deadline,
+                    baseline_accuracy=challenge_data.baseline_accuracy,
+                    token_mint=challenge_data.reward_token_mint
+                )
+            else:
+                logger.info("Skipping blockchain transaction - PROGRAM_ID or keypair not configured. Creating challenge in database only.")
         except Exception as e:
             # If blockchain transaction fails, still create DB record
-            # In production, you might want to fail here
+            # Challenge creation doesn't require blockchain - it's just metadata storage
             tx_hash = None
-            print(f"Blockchain transaction failed: {e}")
+            logger.warning(f"Blockchain transaction failed (non-critical): {e}. Challenge will be created in database.")
         
         # Create database record
         db_challenge = Challenge(
@@ -97,12 +106,35 @@ async def create_challenge(challenge_data: ChallengeCreate, db: Session = Depend
         
         return db_challenge
         
-    except Exception as e:
+    except ValueError as e:
+        # Validation errors
         db.rollback()
+        logger.error(f"Validation error creating challenge: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating challenge: {str(e)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Validation error: {str(e)}"
         )
+    except Exception as e:
+        # Database or other errors
+        db.rollback()
+        logger.error(f"Error creating challenge: {e}", exc_info=True)
+        error_message = str(e)
+        # Provide more helpful error messages
+        if "UNIQUE constraint" in error_message or "duplicate" in error_message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A challenge with this ID already exists"
+            )
+        elif "reward_amount" in error_message.lower() or "0.05" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reward amount must be between 0.01 and 0.05 SOL"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error creating challenge: {error_message}. Please check your database connection and try again."
+            )
 
 @router.get("/", response_model=ChallengeListResponse)
 async def list_challenges(

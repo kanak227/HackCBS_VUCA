@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./flexai.db"
     
     # Solana Configuration
-    SOLANA_RPC_URL: str = "https://api.devnet.solana.com"
-    SOLANA_WS_URL: str = "wss://api.devnet.solana.com"
+    SOLANA_RPC_URL: str = "https://api.testnet.solana.com"
+    SOLANA_WS_URL: str = "wss://api.testnet.solana.com"
     SOLANA_PRIVATE_KEY: str = ""
     PROGRAM_ID: str = "FlexAIPr0gramID1111111111111111111111"
     TOKEN_MINT: str = ""  # SPL token mint address for rewards
