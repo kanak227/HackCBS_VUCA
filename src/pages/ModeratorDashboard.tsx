@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useWallet } from '@solana/wallet-adapter-react'
+import { useWallet, useConnection } from '@solana/wallet-adapter-react'
+import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { motion } from 'framer-motion'
 import Card from '../components/Card'
 import Button from '../components/Button'
+import TransactionModal from '../components/TransactionModal'
 import { submissionsApi, adminApi, challengesApi, Submission, Challenge } from '../utils/api'
 import { CheckCircle, XCircle, Clock, ExternalLink, TrendingUp, User, Award } from 'lucide-react'
 
@@ -11,12 +13,32 @@ interface SubmissionWithChallenge extends Submission {
 }
 
 const ModeratorDashboard = () => {
-  const { publicKey } = useWallet()
+  const { publicKey, signTransaction, sendTransaction } = useWallet()
+  const { connection } = useConnection()
   const [pendingSubmissions, setPendingSubmissions] = useState<SubmissionWithChallenge[]>([])
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<number | null>(null)
   const [rejectReason, setRejectReason] = useState<{ [key: number]: string }>({})
   const [showRejectModal, setShowRejectModal] = useState<number | null>(null)
+  const [transactionModal, setTransactionModal] = useState<{
+    isOpen: boolean
+    transaction: {
+      signature?: string
+      fromAddress: string
+      toAddress: string
+      amount: number
+      status: 'pending' | 'signing' | 'sending' | 'confirming' | 'confirmed' | 'failed'
+      error?: string
+    }
+  }>({
+    isOpen: false,
+    transaction: {
+      fromAddress: '',
+      toAddress: '',
+      amount: 0,
+      status: 'pending',
+    },
+  })
 
   useEffect(() => {
     if (publicKey) {
@@ -62,55 +84,135 @@ const ModeratorDashboard = () => {
   }
 
   const handleApprove = async (submissionId: number) => {
-    if (!publicKey) {
-      alert('Please connect your wallet first')
+    if (!publicKey || !signTransaction || !sendTransaction) {
+      alert('Please connect your moderator wallet first')
       return
     }
+
+    const submission = pendingSubmissions.find((s) => s.id === submissionId)
+    if (!submission) {
+      alert('Submission not found')
+      return
+    }
+
+    // Validate wallet separation
+    if (submission.contributor_address.toLowerCase() === publicKey.toString().toLowerCase()) {
+      alert('❌ Cannot approve your own submission!\n\nYour moderator wallet must be different from the contributor wallet.')
+      return
+    }
+
+    const moderatorAddress = publicKey.toString()
+    const rewardAmount = submission.challenge?.reward_amount || 0
+
+    // Open transaction modal
+    setTransactionModal({
+      isOpen: true,
+      transaction: {
+        fromAddress: moderatorAddress,
+        toAddress: submission.contributor_address,
+        amount: rewardAmount,
+        status: 'pending',
+      },
+    })
 
     try {
       setProcessingId(submissionId)
       
-      // Check if submission exists and has contributor address
-      const submission = pendingSubmissions.find(s => s.id === submissionId)
-      if (!submission) {
-        alert('Submission not found')
-        return
+      // Update status to signing
+      setTransactionModal((prev) => ({
+        ...prev,
+        transaction: { ...prev.transaction, status: 'signing' },
+      }))
+
+      // Create the actual SOL transfer transaction
+      const contributorPubkey = new PublicKey(submission.contributor_address)
+      const rewardLamports = Math.floor(rewardAmount * LAMPORTS_PER_SOL)
+
+      // Get recent blockhash
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+
+      // Create transfer instruction
+      const transferInstruction = SystemProgram.transfer({
+        fromPubkey: publicKey,
+        toPubkey: contributorPubkey,
+        lamports: rewardLamports,
+      })
+
+      // Create transaction
+      const transaction = new Transaction({
+        feePayer: publicKey,
+        blockhash: blockhash,
+        lastValidBlockHeight: lastValidBlockHeight,
+      }).add(transferInstruction)
+
+      // Sign transaction with moderator's wallet
+      const signedTransaction = await signTransaction(transaction)
+
+      // Update status to sending
+      setTransactionModal((prev) => ({
+        ...prev,
+        transaction: { ...prev.transaction, status: 'sending' },
+      }))
+
+      // Send transaction to blockchain
+      const signature = await sendTransaction(signedTransaction, connection, {
+        skipPreflight: false,
+        maxRetries: 3,
+      })
+
+      // Update modal with transaction signature
+      setTransactionModal((prev) => ({
+        ...prev,
+        transaction: {
+          ...prev.transaction,
+          signature: signature,
+          status: 'confirming',
+        },
+      }))
+
+      // Wait for confirmation
+      await connection.confirmTransaction(
+        {
+          signature: signature,
+          blockhash: blockhash,
+          lastValidBlockHeight: lastValidBlockHeight,
+        },
+        'confirmed'
+      )
+
+      // Update status to confirmed
+      setTransactionModal((prev) => ({
+        ...prev,
+        transaction: { ...prev.transaction, status: 'confirmed' },
+      }))
+
+      // Now update the database via API with the transaction hash
+      try {
+        await adminApi.approve(submissionId, moderatorAddress, signature)
+      } catch (dbError: any) {
+        console.error('Database update failed:', dbError)
+        // Transaction already succeeded on blockchain, so we continue
       }
 
-      if (!submission.contributor_address) {
-        alert('Error: Contributor wallet address not found. Cannot distribute reward.')
-        return
-      }
-
-      // Show processing message
-      const processingMsg = `Processing approval...\n\nThis will:\n1. Update submission status to 'approved'\n2. Send ${submission.challenge?.reward_amount || 'reward'} SOL to contributor wallet\n3. Update contributor reputation\n\nPlease wait...`
-      
-      const result = await adminApi.approve(submissionId, publicKey.toString())
-      
-      if (result.reward_tx_hash) {
-        const successMsg = `✅ Submission Approved & Reward Distributed!\n\n` +
-          `📊 Submission ID: ${result.submission_id}\n` +
-          `💰 Reward Amount: ${result.reward_amount} SOL\n` +
-          `🔗 Transaction Hash: ${result.reward_tx_hash}\n\n` +
-          `✅ The reward has been sent to the contributor's wallet address:\n${submission.contributor_address}\n\n` +
-          `View on Solscan: https://solscan.io/tx/${result.reward_tx_hash}`
-        alert(successMsg)
-      } else {
-        alert(`⚠️ Submission Approved (Database Updated)\n\n` +
-          `💰 Reward Amount: ${result.reward_amount} SOL\n\n` +
-          `⚠️ Blockchain transaction is pending or failed.\n` +
-          `The submission status has been updated, but the reward transfer may need manual processing.`)
-      }
-      
-      // Reload submissions
-      await loadPendingSubmissions()
+      // Reload submissions after a delay
+      setTimeout(async () => {
+        await loadPendingSubmissions()
+      }, 1000)
     } catch (error: any) {
+      console.error('Transaction error:', error)
       const errorMsg = error.message || 'Unknown error'
-      if (errorMsg.includes('not found') || errorMsg.includes('wallet')) {
-        alert(`❌ Error: Contributor wallet not found or not registered.\n\n${errorMsg}\n\nPlease ensure the contributor has a connected wallet.`)
-      } else {
-        alert(`Error approving submission: ${errorMsg}`)
-      }
+      setTransactionModal((prev) => ({
+        ...prev,
+        transaction: {
+          ...prev.transaction,
+          status: 'failed',
+          error: errorMsg.includes('User rejected')
+            ? 'Transaction was cancelled. Please try again and approve the transaction in your wallet.'
+            : errorMsg.includes('insufficient funds')
+            ? 'Insufficient SOL balance. Please ensure your moderator wallet has enough SOL to cover the reward and transaction fees.'
+            : errorMsg,
+        },
+      }))
     } finally {
       setProcessingId(null)
     }
@@ -160,23 +262,28 @@ const ModeratorDashboard = () => {
       <div className="container mx-auto px-4 py-20 text-center">
         <Card className="max-w-md mx-auto">
           <div className="mb-6">
-            <div className="w-20 h-20 bg-gradient-cyber rounded-full mx-auto mb-4 flex items-center justify-center">
+            <div className="w-20 h-20 bg-gradient-to-r from-red-500 to-orange-500 rounded-full mx-auto mb-4 flex items-center justify-center">
               <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-orbitron font-bold mb-4 text-gradient">
-              Moderator Dashboard
+            <h2 className="text-2xl font-orbitron font-bold mb-4 bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
+              Moderator Access Required
             </h2>
             <p className="text-gray-400 mb-2">
-              Wallet connection required
+              Moderator wallet connection required
             </p>
             <p className="text-sm text-gray-500 mb-6">
-              You must connect your wallet to approve submissions and distribute rewards via blockchain
+              You must connect your moderator wallet to access the moderator panel and approve submissions
             </p>
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
-              <p className="text-sm text-yellow-400">
-                ⚠️ Moderator actions require wallet signature for blockchain transactions
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
+              <p className="text-sm text-red-400">
+                ⚠️ This is a moderator-only area. Moderator actions require wallet signature for blockchain transactions.
+              </p>
+            </div>
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+              <p className="text-xs text-yellow-400">
+                🔒 Your moderator wallet must be different from contributor wallets
               </p>
             </div>
           </div>
@@ -188,13 +295,25 @@ const ModeratorDashboard = () => {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-20 text-center">
-        <div className="text-cyber-cyan text-xl">Loading pending submissions...</div>
+        <div className="text-red-400 text-xl">Loading pending submissions...</div>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <>
+      <TransactionModal
+        isOpen={transactionModal.isOpen}
+        onClose={() => {
+          setTransactionModal({ ...transactionModal, isOpen: false })
+          // Reload submissions when modal closes if transaction was successful
+          if (transactionModal.transaction.status === 'confirmed') {
+            loadPendingSubmissions()
+          }
+        }}
+        transaction={transactionModal.transaction}
+      />
+      <div className="container mx-auto px-4 py-8">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -202,7 +321,7 @@ const ModeratorDashboard = () => {
       >
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-4xl font-orbitron font-bold mb-2 text-gradient">
+            <h1 className="text-4xl font-orbitron font-bold mb-2 bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
               Moderator Dashboard
             </h1>
             <p className="text-gray-400">
@@ -211,16 +330,20 @@ const ModeratorDashboard = () => {
           </div>
           {publicKey && (
             <div className="text-right">
-              <div className="text-sm text-gray-500 mb-1">Connected Wallet</div>
-              <div className="font-mono text-sm text-cyber-cyan">
+              <div className="text-sm text-gray-500 mb-1">Moderator Wallet</div>
+              <div className="font-mono text-sm text-red-400">
                 {publicKey.toString().slice(0, 6)}...{publicKey.toString().slice(-4)}
               </div>
+              <div className="text-xs text-gray-500 mt-1">(Must be different from contributor wallets)</div>
             </div>
           )}
         </div>
-        <div className="bg-cyber-cyan/10 border border-cyber-cyan/30 rounded-lg p-4 mb-6">
-          <p className="text-sm text-cyber-cyan">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6">
+          <p className="text-sm text-red-400 mb-2">
             💡 <strong>How it works:</strong> When you approve a submission, a blockchain transaction automatically sends the reward SOL to the contributor's wallet. The transaction hash is recorded for transparency.
+          </p>
+          <p className="text-xs text-red-400/80 mt-2">
+            ⚠️ <strong>Important:</strong> Your moderator wallet must be different from the contributor's wallet. The system will validate this before processing approvals.
           </p>
         </div>
       </motion.div>
@@ -239,7 +362,7 @@ const ModeratorDashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <Card className="hover:border-cyber-cyan/50">
+              <Card className="hover:border-red-500/50">
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-start justify-between mb-4">
@@ -248,7 +371,7 @@ const ModeratorDashboard = () => {
                           Submission #{submission.id}
                         </h3>
                         {submission.challenge && (
-                          <p className="text-cyber-cyan font-space mb-1">
+                          <p className="text-red-400 font-space mb-1">
                             Challenge: {submission.challenge.title}
                           </p>
                         )}
@@ -261,11 +384,20 @@ const ModeratorDashboard = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <div className="flex items-center gap-2 text-gray-400">
                         <User className="w-4 h-4" />
-                        <span className="font-mono text-sm">
-                          {submission.contributor_address.slice(0, 8)}...
-                          {submission.contributor_address.slice(-8)}
-                        </span>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-0.5">Contributor Wallet:</div>
+                          <span className="font-mono text-sm">
+                            {submission.contributor_address.slice(0, 8)}...
+                            {submission.contributor_address.slice(-8)}
+                          </span>
+                        </div>
                       </div>
+                      
+                      {publicKey && submission.contributor_address.toLowerCase() === publicKey.toString().toLowerCase() && (
+                        <div className="col-span-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-400">
+                          ⚠️ Warning: This is your own submission. You cannot approve your own submissions as a moderator.
+                        </div>
+                      )}
                       
                       {submission.accuracy !== null && (
                         <div className="flex items-center gap-2 text-gray-400">
@@ -309,7 +441,7 @@ const ModeratorDashboard = () => {
                           href={`https://solscan.io/tx/${submission.solana_tx_hash}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-2 text-cyber-cyan hover:text-cyber-purple text-sm"
+                          className="flex items-center gap-2 text-red-400 hover:text-orange-400 text-sm"
                         >
                           <ExternalLink className="w-4 h-4" />
                           View Submission Transaction
@@ -322,8 +454,8 @@ const ModeratorDashboard = () => {
                     <Button
                       variant="primary"
                       onClick={() => handleApprove(submission.id)}
-                      disabled={processingId === submission.id}
-                      className="w-full"
+                      disabled={processingId === submission.id || (publicKey && submission.contributor_address.toLowerCase() === publicKey.toString().toLowerCase())}
+                      className="w-full !bg-gradient-to-r !from-red-500 !to-orange-500 hover:!from-red-600 hover:!to-orange-600"
                     >
                       {processingId === submission.id ? (
                         <>
@@ -347,7 +479,7 @@ const ModeratorDashboard = () => {
                       variant="outline"
                       onClick={() => setShowRejectModal(submission.id)}
                       disabled={processingId === submission.id}
-                      className="w-full"
+                      className="w-full !border-red-500 !text-red-400 hover:!bg-red-500/10"
                     >
                       <XCircle className="w-4 h-4 mr-2 inline" />
                       Reject
@@ -396,6 +528,7 @@ const ModeratorDashboard = () => {
         </div>
       )}
     </div>
+    </>
   )
 }
 

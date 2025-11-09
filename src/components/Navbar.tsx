@@ -12,7 +12,6 @@ const Navbar = () => {
     { path: '/challenges', label: 'Challenges' },
     { path: '/leaderboard', label: 'Leaderboard' },
     { path: '/dashboard', label: 'My Dashboard' },
-    { path: '/moderator', label: 'Moderator' },
   ]
 
   return (

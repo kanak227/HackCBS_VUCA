@@ -73,9 +73,9 @@ const ChallengeDetail = () => {
     )
   }
 
-  const userSubmission = publicKey
-    ? submissions.find((s) => s.contributor_address === publicKey.toString())
-    : null
+  const userSubmissions = publicKey
+    ? submissions.filter((s) => s.contributor_address === publicKey.toString())
+    : []
 
   return (
     <div className="container mx-auto px-4 py-12">
@@ -186,23 +186,50 @@ const ChallengeDetail = () => {
               <div className="text-center py-4">
                 <p className="text-gray-400 mb-4">Connect your wallet to submit a model</p>
               </div>
-            ) : userSubmission ? (
-              <div className="text-center py-4">
-                <p className="text-gray-300 mb-2">You've already submitted a model</p>
-                <p className="text-sm text-gray-400 mb-4">Status: {userSubmission.status}</p>
-                {userSubmission.accuracy !== null && (
-                  <p className="text-cyber-cyan font-semibold">
-                    Your Accuracy: {(userSubmission.accuracy * 100).toFixed(2)}%
+            ) : (
+              <>
+                {userSubmissions.length > 0 && (
+                  <div className="mb-4 pb-4 border-b border-cyber-darker">
+                    <h3 className="text-sm font-semibold mb-2">Your Submissions ({userSubmissions.length})</h3>
+                    <div className="space-y-2">
+                      {userSubmissions.map((submission) => (
+                        <div key={submission.id} className="bg-cyber-darker p-3 rounded text-sm">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-gray-300">Submission #{submission.id}</span>
+                            <span
+                              className={`px-2 py-1 text-xs rounded ${
+                                submission.status === 'approved'
+                                  ? 'bg-green-900 text-green-300'
+                                  : submission.status === 'rejected'
+                                  ? 'bg-red-900 text-red-300'
+                                  : 'bg-yellow-900 text-yellow-300'
+                              }`}
+                            >
+                              {submission.status}
+                            </span>
+                          </div>
+                          {submission.accuracy !== null && (
+                            <div className="text-cyber-cyan text-xs">
+                              Accuracy: {(submission.accuracy * 100).toFixed(2)}%
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Link to={`/challenges/${challengeId}/submit`}>
+                  <Button variant="primary" className="w-full">
+                    <Upload className="w-4 h-4 mr-2" />
+                    {userSubmissions.length > 0 ? 'Submit Another Model' : 'Submit Model'}
+                  </Button>
+                </Link>
+                {userSubmissions.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    You can submit multiple models to improve your results
                   </p>
                 )}
-              </div>
-            ) : (
-              <Link to={`/challenges/${challengeId}/submit`}>
-                <Button variant="primary" className="w-full">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Submit Model
-                </Button>
-              </Link>
+              </>
             )}
 
             <div className="mt-6 pt-6 border-t border-cyber-darker">

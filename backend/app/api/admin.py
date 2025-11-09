@@ -5,11 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
+import logging
 
 from app.db.database import get_db
 from app.db.models import Challenge, Submission, Evaluation, ContributorReputation, Reward
 from app.services.flexai_solana_service import flexai_solana_service
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -17,6 +20,7 @@ router = APIRouter()
 class ApprovalRequest(BaseModel):
     submission_id: int
     moderator_address: str
+    reward_tx_hash: Optional[str] = None  # Transaction hash if already sent from frontend
 
 class RejectionRequest(BaseModel):
     submission_id: int
@@ -30,6 +34,9 @@ async def approve_submission(
 ):
     """Approve a model submission and release reward"""
     try:
+        # Validate moderator address
+        moderator_address = approval_data.moderator_address.lower()
+        
         # Get submission
         submission = db.query(Submission).filter(Submission.id == approval_data.submission_id).first()
         if not submission:
@@ -42,6 +49,14 @@ async def approve_submission(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Submission already {submission.status}"
+            )
+        
+        # Validate that moderator wallet is different from contributor wallet
+        contributor_address = submission.contributor_address.lower()
+        if moderator_address == contributor_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Moderator wallet cannot be the same as contributor wallet. Please use a different wallet for moderation."
             )
         
         # Get challenge
@@ -60,16 +75,21 @@ async def approve_submission(
                 detail="Submission has not been evaluated yet"
             )
         
-        # Approve on blockchain
-        try:
-            reward_tx_hash = await flexai_solana_service.approve_model(
-                challenge_id=challenge.challenge_id,
-                contributor_address=submission.contributor_address,
-                reward_amount=challenge.reward_amount
-            )
-        except Exception as e:
-            reward_tx_hash = None
-            print(f"Blockchain approval failed: {e}")
+        # Get transaction hash (either from frontend or create new transaction)
+        reward_tx_hash = approval_data.reward_tx_hash
+        
+        # If transaction hash not provided, try to create transaction server-side
+        if not reward_tx_hash:
+            try:
+                reward_tx_hash = await flexai_solana_service.approve_model(
+                    challenge_id=challenge.challenge_id,
+                    contributor_address=submission.contributor_address,
+                    reward_amount=challenge.reward_amount
+                )
+            except Exception as e:
+                reward_tx_hash = None
+                logger.error(f"Blockchain approval failed: {e}")
+                # Still continue with database update even if blockchain fails
         
         # Update submission
         submission.status = "approved"

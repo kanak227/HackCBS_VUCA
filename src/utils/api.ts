@@ -133,7 +133,7 @@ export const submissionsApi = {
 
 // Admin API
 export const adminApi = {
-  approve: async (submissionId: number, moderatorAddress: string): Promise<{
+  approve: async (submissionId: number, moderatorAddress: string, rewardTxHash?: string): Promise<{
     message: string
     submission_id: number
     reward_tx_hash: string | null
@@ -142,9 +142,16 @@ export const adminApi = {
     const response = await fetch(`${API_BASE_URL}/api/admin/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submission_id: submissionId, moderator_address: moderatorAddress }),
+      body: JSON.stringify({ 
+        submission_id: submissionId, 
+        moderator_address: moderatorAddress,
+        reward_tx_hash: rewardTxHash,
+      }),
     })
-    if (!response.ok) throw new Error('Failed to approve submission')
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || 'Failed to approve submission')
+    }
     return response.json()
   },
 

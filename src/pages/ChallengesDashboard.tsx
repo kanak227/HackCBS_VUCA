@@ -51,11 +51,6 @@ const ChallengesDashboard = () => {
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-4xl font-orbitron font-bold text-gradient">Active Challenges</h1>
-        {publicKey && (
-          <Link to="/challenges/create">
-            <Button variant="primary">Create Challenge</Button>
-          </Link>
-        )}
       </div>
 
       {challenges.length === 0 ? (
